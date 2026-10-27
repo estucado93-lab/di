@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="robots" content="noindex,nofollow">
+<title>Sirena</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0b0f14;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
+#stage{position:fixed;inset:0}
+#stage iframe{position:absolute;left:50%;top:50%;width:2732px;height:2048px;border:0;background:#0b0f14;
+  transform-origin:0 0;opacity:0;transition:opacity .15s;pointer-events:none}
+#stage iframe.on{opacity:1}
+#shield{position:fixed;inset:0;z-index:5;touch-action:pan-y}
+#spin{position:fixed;left:50%;top:50%;width:34px;height:34px;margin:-17px;border:3px solid #ffffff33;border-top-color:#fff;border-radius:50%;
+  animation:r .8s linear infinite;z-index:4;display:none}
+@keyframes r{to{transform:rotate(360deg)}}
+#bar{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:10;display:flex;gap:6px;align-items:center;
+  background:#000a;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:6px 8px;border-radius:999px;transition:opacity .3s}
+#bar.hide{opacity:0;pointer-events:none}
+#bar button{all:unset;cursor:pointer;width:40px;height:40px;display:grid;place-items:center;border-radius:50%;font-size:20px;line-height:1}
+#bar button:hover{background:#fff2}
+#bar button:disabled{opacity:.25;cursor:default}
+#ind{min-width:64px;text-align:center;font-size:14px;font-variant-numeric:tabular-nums}
+#rot{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#000a;padding:8px 14px;border-radius:999px;font-size:13px;display:none}
+@media (orientation:portrait) and (max-width:700px){#rot{display:block}}
+@media print{html,body{display:none!important}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="spin"></div>
+<div id="shield"></div>
+<div id="rot">Gira el dispositivo para ver el libro a mayor tamaño</div>
+<div id="bar">
+  <button id="prev" aria-label="Anterior">‹</button>
+  <span id="ind"></span>
+  <button id="next" aria-label="Siguiente">›</button>
+  <button id="fs" aria-label="Pantalla completa">⛶</button>
+</div>
+<script>
+(function(){
+  var N=11, W=2732, H=2048, BASE='book/';
+  var stage=document.getElementById('stage'), shield=document.getElementById('shield'),
+      spin=document.getElementById('spin'), bar=document.getElementById('bar'),
+      ind=document.getElementById('ind'), prev=document.getElementById('prev'), next=document.getElementById('next');
+  var cur=0, token=0, hideT, scale=1;
+
+  function fit(){
+    var vw=window.innerWidth, vh=window.innerHeight;
+    scale=Math.min(vw/W, vh/H);
+    var f=stage.querySelectorAll('iframe');
+    for(var i=0;i<f.length;i++) place(f[i]);
+  }
+  function place(f){
+    f.style.transform='translate('+(-W*scale/2)+'px,'+(-H*scale/2)+'px) scale('+scale+')';
+  }
+
+  var preloaded={};
+  function preload(n){
+    if(n<1||n>N||preloaded[n])return; preloaded[n]=1;
+    fetch(BASE+'sirena-'+n+'.xhtml').then(function(r){return r.text()}).then(function(t){
+      var re=/src="(image\/[^"]+)"/g,m;
+      while((m=re.exec(t))){var i=new Image();i.src=BASE+m[1];}
+    }).catch(function(){});
+  }
+
+  function lock(doc){
+    try{
+      var s=doc.createElement('style');
+      s.textContent='html,body{overflow:hidden!important;margin:0}*{-webkit-user-select:none;user-select:none;-webkit-user-drag:none}img{pointer-events:none}';
+      doc.head.appendChild(s);
+      doc.addEventListener('contextmenu',function(e){e.preventDefault()});
+      doc.addEventListener('dragstart',function(e){e.preventDefault()});
+    }catch(e){}
+  }
+
+  function go(n){
+    n=Math.max(1,Math.min(N,n));
+    if(n===cur&&stage.firstChild)return;
+    cur=n; var my=++token;
+    prev.disabled=n<=1; next.disabled=n>=N;
+    ind.textContent=n+' / '+N;
+    try{history.replaceState(null,'','#'+n);localStorage.setItem('sirena_p',n)}catch(e){}
+    spin.style.display='block';
+    var f=document.createElement('iframe');
+    f.setAttribute('scrolling','no');
+    f.setAttribute('tabindex','-1');
+    f.setAttribute('aria-hidden','true');
+    place(f);
+    f.onload=function(){
+      if(my!==token){f.remove();return}
+      lock(f.contentDocument);
+      spin.style.display='none';
+      var old=[].slice.call(stage.querySelectorAll('iframe')).filter(function(x){return x!==f});
+      f.classList.add('on');
+      setTimeout(function(){old.forEach(function(o){o.remove()})},170);
+      preload(n+1);preload(n-1);
+    };
+    f.src=BASE+'sirena-'+n+'.xhtml';
+    stage.appendChild(f);
+  }
+
+  function nextP(){go(cur+1)} function prevP(){go(cur-1)}
+  prev.onclick=prevP; next.onclick=nextP;
+  document.getElementById('fs').onclick=function(){
+    var d=document,el=d.documentElement;
+    if(d.fullscreenElement||d.webkitFullscreenElement){(d.exitFullscreen||d.webkitExitFullscreen).call(d)}
+    else{(el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el)}
+  };
+
+  function show(){bar.classList.remove('hide');clearTimeout(hideT);hideT=setTimeout(function(){bar.classList.add('hide')},2800)}
+  bar.addEventListener('pointermove',show);
+
+  // gestos
+  var sx,sy,st;
+  shield.addEventListener('pointerdown',function(e){sx=e.clientX;sy=e.clientY;st=Date.now()});
+  shield.addEventListener('pointerup',function(e){
+    if(sx==null)return;
+    var dx=e.clientX-sx,dy=e.clientY-sy; sx=null;
+    if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5){dx<0?nextP():prevP();show();return}
+    if(Math.abs(dx)<12&&Math.abs(dy)<12){
+      var x=e.clientX/window.innerWidth;
+      if(x<.25)prevP(); else if(x>.75)nextP(); else {bar.classList.contains('hide')?show():bar.classList.add('hide')}
+    }
+  });
+  shield.addEventListener('pointermove',show);
+  shield.addEventListener('wheel',function(e){e.preventDefault()},{passive:false});
+
+  // teclado y bloqueos
+  document.addEventListener('keydown',function(e){
+    var k=e.key;
+    if((e.ctrlKey||e.metaKey)&&/^[spuac]$/i.test(k)){e.preventDefault();return}
+    if(k==='F12'){e.preventDefault();return}
+    if(k==='ArrowRight'||k==='PageDown'||k===' '||k==='ArrowDown'){e.preventDefault();nextP();show()}
+    else if(k==='ArrowLeft'||k==='PageUp'||k==='ArrowUp'){e.preventDefault();prevP();show()}
+    else if(k==='Home'){go(1)} else if(k==='End'){go(N)}
+    else if(k==='f'||k==='F'){document.getElementById('fs').click()}
+  });
+  ['contextmenu','dragstart','selectstart','copy','cut'].forEach(function(t){
+    document.addEventListener(t,function(e){e.preventDefault()});
+  });
+
+  window.addEventListener('resize',fit);
+  window.addEventListener('orientationchange',function(){setTimeout(fit,100)});
+  window.addEventListener('hashchange',function(){var n=parseInt(location.hash.slice(1),10);if(n&&n!==cur)go(n)});
+
+  var start=parseInt(location.hash.slice(1),10);
+  if(!start){try{start=parseInt(localStorage.getItem('sirena_p'),10)}catch(e){}}
+  fit(); go(start||1); show();
+})();
+</script>
+</body>
+</html>
